@@ -246,7 +246,7 @@ useEffect(() => {
 
 
           
-            {(role === "admin" || role === "staff") && (
+            {role === "admin" && (
              <button
             onClick={() =>
              item._id && deleteMaintenance(item._id)

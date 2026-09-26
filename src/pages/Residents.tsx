@@ -328,7 +328,7 @@ function Residents() {
               </button>
             )}
 
-            {(role === "admin" || role === "staff") && (
+            {role === "admin"  && (
               <button
                 onClick={() =>
                   deleteResident(resident)

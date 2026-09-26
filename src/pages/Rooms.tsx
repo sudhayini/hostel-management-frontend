@@ -208,7 +208,7 @@ if (roomResidents.length > 0) {
     </button>
     )}
 
-    {(role === "admin" || role === "staff") && (
+    {role === "admin"  && (
     <button
     onClick={() => deleteRoom(room)}
     className="bg-red-500 text-white px-3 py-1 rounded ml-2"

@@ -91,7 +91,7 @@ const roomsSlice = createSlice({
   },
 },
   extraReducers: (builder) => {
-  builder.addCase(fetchRooms.fulfilled, (state, action) => {
+  builder.addCase(fetchRooms.fulfilled, (_state, action) => {
     return action.payload;
   });
 

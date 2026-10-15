@@ -1,14 +1,34 @@
 import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
 import api from "../../services/api";
 
-type Resident = {
-  _id?:string;
+export type RoomHistory = {
+  roomNumber: string;
+  checkInDate: string;
+  checkOutDate: string | null;
+};
+
+export type Resident = {
+  _id?: string;
   name: string;
   phone: string;
   email: string;
   roomNumber: string;
   emergencyContactName: string;
   emergencyContactPhone: string;
+  checkInDate?: string | null;
+  expectedCheckOutDate?: string | null;
+  roomHistory?: RoomHistory[];
+};
+
+type ResidentInput = {
+  name: string;
+  phone: string;
+  email: string;
+  roomNumber: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  checkInDate?: string | null;
+  expectedCheckOutDate?: string | null;
 };
 
 const initialState: Resident[] = [];
@@ -17,22 +37,15 @@ export const fetchResidents = createAsyncThunk(
   "residents/fetchResidents",
   async () => {
     const response = await api.get("/residents");
-    return response.data;
+    return response.data as Resident[];
   }
 );
 
 export const createResident = createAsyncThunk(
   "residents/createResident",
-  async (resident: {
-    name: string;
-    phone: string;
-    email: string;
-    roomNumber: string;
-    emergencyContactName: string;
-    emergencyContactPhone: string;
-  }) => {
+  async (resident: ResidentInput) => {
     const response = await api.post("/residents", resident);
-    return response.data.resident;
+    return response.data.resident as Resident;
   }
 );
 
@@ -43,17 +56,10 @@ export const editResident = createAsyncThunk(
     resident,
   }: {
     id: string;
-    resident: {
-      name: string;
-      phone: string;
-      email: string;
-      roomNumber: string;
-      emergencyContactName: string;
-      emergencyContactPhone: string;
-    };
+    resident: ResidentInput;
   }) => {
     const response = await api.put(`/residents/${id}`, resident);
-    return response.data;
+    return response.data as Resident;
   }
 );
 
@@ -91,37 +97,32 @@ const residentsSlice = createSlice({
     },
   },
 
- extraReducers: (builder)=>{
+  extraReducers: (builder) => {
+    builder.addCase(fetchResidents.fulfilled, (_state, action) => {
+      return action.payload;
+    });
 
-  builder.addCase(fetchResidents.fulfilled, (_state, action) => {
-  return action.payload;
+    builder.addCase(createResident.fulfilled, (state, action) => {
+      state.push(action.payload);
+    });
+
+    builder.addCase(editResident.fulfilled, (state, action) => {
+      const index = state.findIndex(
+        (resident) => resident._id === action.payload._id
+      );
+
+      if (index !== -1) {
+        state[index] = action.payload;
+      }
+    });
+
+    builder.addCase(removeResident.fulfilled, (state, action) => {
+      return state.filter(
+        (resident) => resident._id !== action.payload
+      );
+    });
+  },
 });
-  
-  builder.addCase(createResident.fulfilled, (state, action) => {
-    state.push(action.payload);
-  });
-
-  builder.addCase(editResident.fulfilled, (state, action) => {
-    const index = state.findIndex(
-      (resident) => resident._id === action.payload._id
-    );
-
-    if (index !== -1) {
-      state[index] = action.payload;
-    }
-  });
-
-  builder.addCase(removeResident.fulfilled, (state, action) => {
-    return state.filter(
-      (resident) => resident._id !== action.payload
-    );
-  });
-
-}
-
-});
-
-
 
 export const {
   addResident,

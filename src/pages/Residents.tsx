@@ -12,6 +12,12 @@ import {
 
 import { fetchRooms } from "../features/rooms/roomsSlice";
 
+type RoomHistory = {
+  roomNumber: string;
+  checkInDate: string;
+  checkOutDate: string | null;
+};
+
 type Resident = {
   _id?: string;
   name: string;
@@ -20,6 +26,9 @@ type Resident = {
   emergencyContactPhone: string;
   email: string;
   roomNumber: string;
+  checkInDate?: string | null;
+  expectedCheckOutDate?: string | null;
+  roomHistory?: RoomHistory[];
 };
 
 function Residents() {
@@ -47,6 +56,9 @@ function Residents() {
   const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
   const [email, setEmail] = useState("");
   const [roomNumber, setRoomNumber] = useState("");
+  const [checkInDate, setCheckInDate] = useState("");
+  const [expectedCheckOutDate, setExpectedCheckOutDate] = useState("");
+
 
   const [showForm, setShowForm] = useState(false);
 
@@ -106,6 +118,9 @@ function Residents() {
               roomNumber,
               emergencyContactName,
               emergencyContactPhone,
+              checkInDate: checkInDate || null,
+              expectedCheckOutDate: expectedCheckOutDate || null,
+
             },
           })
         ).unwrap();
@@ -121,6 +136,8 @@ function Residents() {
             roomNumber,
             emergencyContactName,
             emergencyContactPhone,
+            checkInDate: checkInDate || null,
+            expectedCheckOutDate: expectedCheckOutDate || null,
           })
         ).unwrap();
 
@@ -151,6 +168,18 @@ function Residents() {
 
     setEmail(resident.email);
     setRoomNumber(resident.roomNumber);
+
+    setCheckInDate(
+    resident.checkInDate
+    ? resident.checkInDate.slice(0, 10)
+    : ""
+    );
+
+    setExpectedCheckOutDate(
+    resident.expectedCheckOutDate
+    ? resident.expectedCheckOutDate.slice(0, 10)
+    : ""
+   );
 
     setEditingResident(resident);
     setShowForm(true);
@@ -183,9 +212,14 @@ function Residents() {
               resident.emergencyContactName || "",
             emergencyContactPhone:
               resident.emergencyContactPhone || "",
+                   checkInDate: null,
+          expectedCheckOutDate: null,
           },
         })
       ).unwrap();
+
+       await dispatch(fetchResidents()).unwrap();
+       await dispatch(fetchRooms()).unwrap();
 
       alert("Resident checked out successfully");
     } catch (error: any) {
@@ -232,8 +266,9 @@ function Residents() {
     setEmergencyContactName("");
     setEmergencyContactPhone("");
     setEmail("");
-    setRoomNumber("");
-
+    setRoomNumber(""); 
+    setCheckInDate("");
+    setExpectedCheckOutDate("");
     setEditingResident(null);
     setShowForm(false);
   };
@@ -277,6 +312,16 @@ function Residents() {
               {resident.name}
             </h2>
 
+            <button
+            onClick={() => {
+           if (resident._id) {
+           window.location.href = `/residents/${resident._id}`;
+           }
+           }}
+          className="mt-3 rounded-lg bg-indigo-600 px-3 py-2 text-white hover:bg-indigo-700"> 
+             View Profile
+            </button>
+
             <p className="text-gray-500 mt-2">
               Phone: {resident.phone}
             </p>
@@ -304,6 +349,51 @@ function Residents() {
                 ? `Room: ${resident.roomNumber}`
                 : "Not Allocated"}
             </p>
+
+
+           {resident.checkInDate && (
+           <p className="text-gray-600 mt-2">
+           Check-in: {resident.checkInDate.slice(0, 10)}
+           </p>
+           )}
+
+           {resident.expectedCheckOutDate && (
+           <p className="text-gray-600">
+           Expected check-out:{" "}
+           {resident.expectedCheckOutDate.slice(0, 10)}
+           </p>
+           )}
+
+           
+          {resident.roomHistory && resident.roomHistory.length > 0 && (
+          <details className="mt-3">
+          <summary className="cursor-pointer font-medium text-gray-700">
+           Room History ({resident.roomHistory.length})
+          </summary>
+
+          <div className="mt-2 space-y-2">
+          {resident.roomHistory.map((history, index) => (
+          <div
+          key={`${history.roomNumber}-${index}`}
+          className="border-t border-gray-300 pt-2 text-sm text-gray-600"
+          >
+          <p>Room: {history.roomNumber}</p>
+
+          <p>
+            Check-in: {history.checkInDate.slice(0, 10)}
+          </p>
+
+          <p>
+            Check-out:{" "}
+            {history.checkOutDate
+              ? history.checkOutDate.slice(0, 10)
+              : "Currently assigned"}
+          </p>
+         </div>
+         ))}
+         </div>
+         </details>
+        )}
 
             {(role === "admin" || role === "staff") && (
               <button
@@ -400,6 +490,35 @@ function Residents() {
             }
             className="border border-solid rounded-lg px-2 py-1 mr-2 mb-3"
           />
+
+        
+<div className="flex flex-wrap gap-4 ml-2 mb-3">
+  <div>
+    <label className="block text-sm font-medium mb-1">
+      Check-in Date
+    </label>
+    <input
+      type="date"
+      value={checkInDate}
+      onChange={(e) => setCheckInDate(e.target.value)}
+      className="border rounded-lg px-2 py-1"
+    />
+  </div>
+
+  <div>
+    <label className="block text-sm font-medium mb-1">
+      Expected Check-out Date
+    </label>
+    <input
+      type="date"
+      value={expectedCheckOutDate}
+      min={checkInDate || undefined}
+      onChange={(e) => setExpectedCheckOutDate(e.target.value)}
+      className="border rounded-lg px-2 py-1"
+    />
+  </div>
+</div>
+
 
           <select
             value={roomNumber}

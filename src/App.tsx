@@ -13,6 +13,8 @@ import Staff from "./pages/Staff";
 
 import ProtectedRoute from "./components/ProtecteRoute";
 import RoleRoute from "./components/RoleRute";
+import ResidentProfile from "./pages/Residentprofile";
+
 
 function App() {
   return (
@@ -27,6 +29,8 @@ function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="rooms" element={<Rooms />} />
             <Route path="residents" element={<Residents />} />
+            <Route path="residents/:id" element={<ResidentProfile />}/>
+
             <Route path="maintenance" element={<Maintenance />} />
             <Route path="billing" element={<Billing />} />
 

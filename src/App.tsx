@@ -13,7 +13,9 @@ import Staff from "./pages/Staff";
 
 import ProtectedRoute from "./components/ProtecteRoute";
 import RoleRoute from "./components/RoleRute";
-import ResidentProfile from "./pages/Residentprofile";
+import ResidentProfile from "./pages/ResidentProfile";
+import Payments from "./pages/Payments";
+
 
 
 function App() {
@@ -33,6 +35,12 @@ function App() {
 
             <Route path="maintenance" element={<Maintenance />} />
             <Route path="billing" element={<Billing />} />
+
+            {/* Admin and Staff */}
+            <Route element={<RoleRoute allowedRoles={["admin", "staff"]} />}>
+             <Route path="payments" element={<Payments />} />
+             </Route>
+
 
             {/* Admin Only */}
             <Route element={<RoleRoute allowedRoles={["admin"]} />}>

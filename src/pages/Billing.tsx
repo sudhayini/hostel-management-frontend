@@ -19,6 +19,7 @@ import {
 
 type Bill = {
   _id?: string;
+  residentId?: string;
   residentName: string;
   roomNumber: string;
   roomFee: number;
@@ -59,6 +60,7 @@ function Billing() {
 
 
 //bill state
+  const [residentId, setResidentId] = useState("");
   const [residentName, setResidentName] = useState("");
   const [roomNumber, setRoomNumber] = useState("");
   const [roomFee, setRoomFee] = useState("");
@@ -161,12 +163,13 @@ function Billing() {
     }
 
     try {
-                                     //update
+      //update
       if (editingId !== null) {
         await dispatch(
           editBilling({
             id: editingId,
             billing: {
+              residentId,
               residentName,
               roomNumber,
               roomFee: Number(roomFee || 0),
@@ -193,6 +196,7 @@ function Billing() {
       else {
         await dispatch(
           createBilling({
+            residentId,
             residentName,
             roomNumber,
             roomFee: Number(roomFee || 0),
@@ -227,6 +231,7 @@ function Billing() {
   //edit bill
 
   const handleEdit = (bill: Bill) => {
+    setResidentId(bill.residentId || "");
     setResidentName(bill.residentName);
     setRoomNumber(bill.roomNumber);
     setRoomFee(String(bill.roomFee));
@@ -332,6 +337,7 @@ function Billing() {
 
 
   const clearForm = () => {
+    setResidentId("");
     setResidentName("");
     setRoomNumber("");
     setRoomFee("");
@@ -557,49 +563,27 @@ function Billing() {
               ? "Edit Bill"
               : "Add Bill"}
           </h2>
-
           
-          <select
-            value={residentName}
-            onChange={(e) => {
-              const selectedResident =
-                residents.find(
-                  (resident) =>
-                    resident.name ===
-                    e.target.value
-                );
+        <select
+           value={residentId}
+           onChange={(e) => {
+           const selectedResident = residents.find(
+           (resident) => resident._id === e.target.value
+          );
 
-              setResidentName(e.target.value);
+          setResidentId(e.target.value);
+          setResidentName(selectedResident?.name || "");
+          setRoomNumber(selectedResident?.roomNumber || "");
+           }}
+         className="border rounded-lg px-2 py-1 mr-2 mb-3">
+        <option value="">Select Resident</option>
 
-              if (selectedResident) {
-                setRoomNumber(
-                  selectedResident.roomNumber
-                );
-              }
-            }}
-            className="border rounded-lg px-2 py-1 mr-2 mb-3"
-          >
-            <option value="">
-              Select Resident
-            </option>
+         {residents.filter((resident) => resident.roomNumber).map((resident) => (
+        <option key={resident._id} value={resident._id}>
+         {resident.name} - {resident.roomNumber}
+        </option>))}
+       </select>
 
-            {residents
-              .filter(
-                (resident) =>
-                  resident.roomNumber
-              )
-              .map((resident) => (
-                <option
-                  key={resident._id}
-                  value={resident.name}
-                >
-                  {resident.name} -{" "}
-                  {resident.roomNumber}
-                </option>
-              ))}
-          </select>
-
-          
           <input
             type="text"
             placeholder="Room Number"

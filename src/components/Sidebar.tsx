@@ -47,6 +47,17 @@ function Sidebar() {
           Billing
         </NavLink>
 
+    
+        {(user.role === "admin" || user.role === "staff") && (
+          <NavLink
+            to="/payments"
+            className="block px-3 py-2 hover:bg-mauve-700 text-2xl border-solid rounded-xl"
+          >
+            Payments
+          </NavLink>
+        )}
+
+
         <NavLink
           to="/reports"
           className="block px-3 py-2 hover:bg-mauve-700 text-2xl border-solid rounded-xl"

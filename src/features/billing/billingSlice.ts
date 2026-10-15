@@ -4,6 +4,7 @@ import api from "../../services/api";
 
 type Bill = {
   _id?: string;
+   residentId?: string;
   residentName: string;
   roomNumber: string;
   roomFee: number;
@@ -29,6 +30,7 @@ export const fetchBilling = createAsyncThunk(
 export const createBilling = createAsyncThunk(
   "billing/createBilling",
   async (billing: {
+    residentId: string;
     residentName: string;
     roomNumber: string;
     roomFee: number;
@@ -53,6 +55,7 @@ export const editBilling = createAsyncThunk(
   }: {
     id: string;
     billing: {
+      residentId: string;
       residentName: string;
       roomNumber: string;
       roomFee: number;

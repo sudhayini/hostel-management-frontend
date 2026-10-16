@@ -1,44 +1,74 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { useDispatch, useSelector } from "react-redux";
-
-import { type AppDispatch, type RootState } from "../store/store";
-import { fetchResidents } from "../features/residents/residentsSlice";
+import api from "../services/api";
+import type { Resident } from "../features/residents/residentsSlice";
 
 function ResidentProfile() {
   const { id } = useParams<{ id: string }>();
-  const dispatch = useDispatch<AppDispatch>();
 
-  const residents = useSelector(
-    (state: RootState) => state.residents
-  );
+  const [resident, setResident] = useState<Resident | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!residents.length) {
-      dispatch(fetchResidents());
+    if (!id) {
+      setError("Resident ID is missing.");
+      setLoading(false);
+      return;
     }
-  }, [dispatch, residents.length]);
 
-  const resident = residents.find(
-    (item) => item._id === id
-  );
+    const loadResident = async () => {
+      try {
+        setLoading(true);
+        setError("");
 
-  if (!resident) {
+        const response = await api.get(`/residents/${id}`);
+        setResident(response.data);
+      } catch (err: any) {
+        setResident(null);
+
+        if (err.response?.status === 403) {
+          setError("You are not allowed to view this resident profile.");
+        } else if (err.response?.status === 404) {
+          setError("Resident not found.");
+        } else {
+          setError(
+            err.response?.data?.message ||
+              "Failed to load resident profile."
+          );
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadResident();
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <p className="text-gray-600">Loading resident profile...</p>
+      </div>
+    );
+  }
+
+  if (error || !resident) {
     return (
       <div className="p-6">
         <h1 className="text-2xl font-bold text-gray-800">
           Resident Profile
         </h1>
 
-        <p className="mt-4 text-gray-600">
-          Resident not found or still loading.
+        <p className="mt-4 text-red-600">
+          {error || "Resident not found."}
         </p>
 
         <Link
           to="/residents"
-          className="inline-block mt-4 text-blue-600 underline"
+          className="mt-4 inline-block text-blue-600 underline"
         >
-          Back to Residents
+          ← Back to Residents
         </Link>
       </div>
     );
@@ -46,10 +76,7 @@ function ResidentProfile() {
 
   return (
     <div className="p-6">
-      <Link
-        to="/residents"
-        className="text-blue-600 underline"
-      >
+      <Link to="/residents" className="text-blue-600 underline">
         ← Back to Residents
       </Link>
 
@@ -58,15 +85,14 @@ function ResidentProfile() {
           {resident.name}
         </h1>
 
-        <p className="mt-1 text-gray-500">
-          Resident Profile
-        </p>
+        <p className="mt-1 text-gray-500">Resident Profile</p>
 
         <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
+          <section>
             <h2 className="font-semibold">Contact Information</h2>
-            <p className="mt-2">Phone: {resident.phone}</p>
-            <p>Email: {resident.email}</p>
+
+            <p className="mt-2">Phone: {resident.phone || "Not provided"}</p>
+            <p>Email: {resident.email || "Not provided"}</p>
             <p>
               Emergency Contact:{" "}
               {resident.emergencyContactName || "Not provided"}
@@ -75,10 +101,11 @@ function ResidentProfile() {
               Emergency Phone:{" "}
               {resident.emergencyContactPhone || "Not provided"}
             </p>
-          </div>
+          </section>
 
-          <div>
+          <section>
             <h2 className="font-semibold">Room Information</h2>
+
             <p className="mt-2">
               Current Room: {resident.roomNumber || "Not allocated"}
             </p>
@@ -94,13 +121,11 @@ function ResidentProfile() {
                 ? resident.expectedCheckOutDate.slice(0, 10)
                 : "Not set"}
             </p>
-          </div>
+          </section>
         </div>
 
-        <div className="mt-8">
-          <h2 className="text-xl font-semibold">
-            Room-Change History
-          </h2>
+        <section className="mt-8">
+          <h2 className="text-xl font-semibold">Room-Change History</h2>
 
           {!resident.roomHistory?.length ? (
             <p className="mt-3 text-gray-500">
@@ -116,9 +141,11 @@ function ResidentProfile() {
                   <p className="font-medium">
                     Room: {history.roomNumber}
                   </p>
+
                   <p className="text-gray-600">
-                    Check-in: {history.checkInDate.slice(0, 10)}
+                    Check-in: {history.checkInDate?.slice(0, 10) || "Not available"}
                   </p>
+
                   <p className="text-gray-600">
                     Check-out:{" "}
                     {history.checkOutDate
@@ -129,7 +156,7 @@ function ResidentProfile() {
               ))}
             </div>
           )}
-        </div>
+        </section>
       </div>
     </div>
   );

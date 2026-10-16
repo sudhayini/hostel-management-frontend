@@ -1,9 +1,6 @@
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import {
-  type AppDispatch,
-  type RootState,
-} from "../store/store";
+import { type AppDispatch, type RootState } from "../store/store";
 
 import {
   createBilling,
@@ -32,34 +29,38 @@ type Bill = {
   dueDate: string;
 };
 
+const money = (amount: number) =>
+  `₹${Number(amount || 0).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
+const formatDate = (date?: string) => {
+  if (!date) return "Not set";
+
+  const parsed = new Date(date);
+
+  return Number.isNaN(parsed.getTime())
+    ? "Not set"
+    : parsed.toLocaleDateString("en-IN");
+};
+
 function Billing() {
   const dispatch = useDispatch<AppDispatch>();
 
-  const user = JSON.parse(
-    localStorage.getItem("user") || "{}"
-  );
-
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
   const role = user.role;
 
-  const bills = useSelector(
-    (state: RootState) => state.billing
-  );
-
-  const residents = useSelector(
-    (state: RootState) => state.residents
-  );
-
-  const payments = useSelector(
-    (state: RootState) => state.payments
-  );
+  const bills = useSelector((state: RootState) => state.billing);
+  const residents = useSelector((state: RootState) => state.residents);
+  const payments = useSelector((state: RootState) => state.payments);
 
   useEffect(() => {
     dispatch(fetchBilling());
     dispatch(fetchPayments());
   }, [dispatch]);
 
-
-//bill state
+  // Bill form state
   const [residentId, setResidentId] = useState("");
   const [residentName, setResidentName] = useState("");
   const [roomNumber, setRoomNumber] = useState("");
@@ -68,42 +69,57 @@ function Billing() {
   const [additionalFee, setAdditionalFee] = useState("");
   const [discount, setDiscount] = useState("");
   const [lateFee, setLateFee] = useState("");
-  const [paymentStatus, setPaymentStatus] =
-    useState("Pending");
-
+  const [paymentStatus, setPaymentStatus] = useState("Pending");
   const [dueDate, setDueDate] = useState("");
-
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-  const [editingId, setEditingId] =
-    useState<string | null>(null);
+  // Payment form state
+  const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("UPI");
+  const [transactionId, setTransactionId] = useState("");
+  const [paymentNotes, setPaymentNotes] = useState("");
 
-  // payment state
-  const [paymentBill, setPaymentBill] =
-    useState<Bill | null>(null);
+  // Invoice state
+  const [invoiceBill, setInvoiceBill] = useState<Bill | null>(null);
 
-  const [paymentAmount, setPaymentAmount] =
-    useState("");
+  const getBillPayments = (bill: Bill) =>
+    payments.filter((payment) => payment.billId === bill._id);
 
-  const [paymentMethod, setPaymentMethod] =
-    useState("UPI");
+  const getTotalPaid = (bill: Bill) =>
+    getBillPayments(bill).reduce(
+      (sum, payment) => sum + Number(payment.amount || 0),
+      0
+    );
 
-  const [transactionId, setTransactionId] =
-    useState("");
+  const getRemaining = (bill: Bill) =>
+    Math.max(0, Number(bill.total || 0) - getTotalPaid(bill));
 
-  const [paymentNotes, setPaymentNotes] =
-    useState("");
+  const clearForm = () => {
+    setResidentId("");
+    setResidentName("");
+    setRoomNumber("");
+    setRoomFee("");
+    setUtilityFee("");
+    setAdditionalFee("");
+    setDiscount("");
+    setLateFee("");
+    setPaymentStatus("Pending");
+    setDueDate("");
+    setEditingId(null);
+    setShowForm(false);
+  };
 
-  // save bill
-
+  // Create or update a bill
   const saveBill = async () => {
-    if (!residentName.trim()) {
-      alert("Please enter resident name");
+    if (!residentId && !residentName.trim()) {
+      alert("Please select a resident");
       return;
     }
 
     if (!roomNumber.trim()) {
-      alert("Please enter room number");
+      alert("Please select a resident with an allocated room");
       return;
     }
 
@@ -112,113 +128,62 @@ function Billing() {
       return;
     }
 
-    if (Number(roomFee) < 0) {
-      alert("Room fee cannot be negative");
-      return;
-    }
+    const amounts = {
+      roomFee: Number(roomFee || 0),
+      utilityFee: Number(utilityFee || 0),
+      additionalFee: Number(additionalFee || 0),
+      discount: Number(discount || 0),
+      lateFee: Number(lateFee || 0),
+    };
 
-    if (Number(utilityFee) < 0) {
-      alert("Utility fee cannot be negative");
-      return;
-    }
-
-    if (Number(additionalFee) < 0) {
-      alert("Additional fee cannot be negative");
-      return;
-    }
-
-    if (Number(discount) < 0) {
-      alert("Discount cannot be negative");
-      return;
-    }
-
-    if (Number(lateFee) < 0) {
-      alert("Late fee cannot be negative");
+    if (Object.values(amounts).some((amount) => !Number.isFinite(amount) || amount < 0)) {
+      alert("Amounts must be valid non-negative numbers");
       return;
     }
 
     const subtotal =
-      Number(roomFee || 0) +
-      Number(utilityFee || 0) +
-      Number(additionalFee || 0) +
-      Number(lateFee || 0);
+      amounts.roomFee +
+      amounts.utilityFee +
+      amounts.additionalFee +
+      amounts.lateFee;
 
-    if (Number(discount || 0) > subtotal) {
-      alert(
-        "Discount cannot be greater than the total fees"
-      );
+    if (amounts.discount > subtotal) {
+      alert("Discount cannot be greater than the total fees");
       return;
     }
 
-    const total =
-      Number(roomFee || 0) +
-      Number(utilityFee || 0) +
-      Number(additionalFee || 0) +
-      Number(lateFee || 0) -
-      Number(discount || 0);
+    const total = subtotal - amounts.discount;
 
-    if (total < 0) {
-      alert("Total amount cannot be negative");
-      return;
-    }
+    const billingData = {
+      residentId,
+      residentName: residentName.trim(),
+      roomNumber: roomNumber.trim(),
+      ...amounts,
+      total,
+      paymentStatus: paymentStatus as
+        | "Pending"
+        | "Paid"
+        | "Partially Paid",
+      dueDate,
+    };
 
     try {
-      //update
-      if (editingId !== null) {
+      if (editingId) {
         await dispatch(
           editBilling({
             id: editingId,
-            billing: {
-              residentId,
-              residentName,
-              roomNumber,
-              roomFee: Number(roomFee || 0),
-              utilityFee: Number(utilityFee || 0),
-              additionalFee: Number(
-                additionalFee || 0
-              ),
-              discount: Number(discount || 0),
-              lateFee: Number(lateFee || 0),
-              total,
-              paymentStatus: paymentStatus as
-                | "Pending"
-                | "Paid"
-                | "Partially Paid",
-              dueDate,
-            },
+            billing: billingData,
           })
         ).unwrap();
 
         alert("Bill updated successfully");
-      }
-
-      // add bill
-      else {
-        await dispatch(
-          createBilling({
-            residentId,
-            residentName,
-            roomNumber,
-            roomFee: Number(roomFee || 0),
-            utilityFee: Number(utilityFee || 0),
-            additionalFee: Number(
-              additionalFee || 0
-            ),
-            discount: Number(discount || 0),
-            lateFee: Number(lateFee || 0),
-            total,
-            paymentStatus: paymentStatus as
-              | "Pending"
-              | "Paid"
-              | "Partially Paid",
-            dueDate,
-          })
-        ).unwrap();
-
+      } else {
+        await dispatch(createBilling(billingData)).unwrap();
         alert("Bill added successfully");
       }
 
       clearForm();
+      dispatch(fetchBilling());
     } catch (error: any) {
       alert(
         error?.response?.data?.message ||
@@ -228,24 +193,20 @@ function Billing() {
     }
   };
 
-  //edit bill
-
   const handleEdit = (bill: Bill) => {
     setResidentId(bill.residentId || "");
     setResidentName(bill.residentName);
     setRoomNumber(bill.roomNumber);
-    setRoomFee(String(bill.roomFee));
-    setUtilityFee(String(bill.utilityFee));
-    setAdditionalFee(String(bill.additionalFee));
-    setDiscount(String(bill.discount));
-    setLateFee(String(bill.lateFee));
+    setRoomFee(String(bill.roomFee ?? 0));
+    setUtilityFee(String(bill.utilityFee ?? 0));
+    setAdditionalFee(String(bill.additionalFee ?? 0));
+    setDiscount(String(bill.discount ?? 0));
+    setLateFee(String(bill.lateFee ?? 0));
     setPaymentStatus(bill.paymentStatus);
 
     setDueDate(
       bill.dueDate
-        ? new Date(bill.dueDate)
-            .toISOString()
-            .split("T")[0]
+        ? new Date(bill.dueDate).toISOString().split("T")[0]
         : ""
     );
 
@@ -253,29 +214,24 @@ function Billing() {
     setShowForm(true);
   };
 
-//delete bill
-
   const deleteBill = async (id: string) => {
-    if (!id) {
-      alert("Bill ID not found");
+    if (!window.confirm("Are you sure you want to delete this bill?")) {
       return;
     }
 
     try {
-      await dispatch(
-        removeBilling(id)
-      ).unwrap();
-
+      await dispatch(removeBilling(id)).unwrap();
       alert("Bill deleted successfully");
+      dispatch(fetchBilling());
     } catch (error: any) {
       alert(
         error?.response?.data?.message ||
+          error?.message ||
           "Failed to delete bill"
       );
     }
   };
 
- 
   const openPaymentForm = (bill: Bill) => {
     setPaymentBill(bill);
     setPaymentAmount("");
@@ -284,25 +240,22 @@ function Billing() {
     setPaymentNotes("");
   };
 
-
   const savePayment = async () => {
     if (!paymentBill?._id) {
       alert("Bill ID not found");
       return;
     }
 
-    if (!paymentAmount) {
-      alert("Please enter payment amount");
+    const amount = Number(paymentAmount);
+    const remaining = getRemaining(paymentBill);
+
+    if (!paymentAmount || !Number.isFinite(amount) || amount <= 0) {
+      alert("Enter a valid payment amount greater than zero");
       return;
     }
 
-    if (Number(paymentAmount) <= 0) {
-      alert("Payment amount must be greater than 0");
-      return;
-    }
-
-    if (Number(paymentAmount) > paymentBill.total) {
-      alert("Payment cannot be greater than bill total");
+    if (amount > remaining) {
+      alert(`Payment cannot exceed the remaining balance of ${money(remaining)}`);
       return;
     }
 
@@ -311,7 +264,7 @@ function Billing() {
         createPayment({
           billId: paymentBill._id,
           residentName: paymentBill.residentName,
-          amount: Number(paymentAmount),
+          amount,
           paymentMethod,
           paymentDate: new Date().toISOString(),
           transactionId,
@@ -326,6 +279,9 @@ function Billing() {
       setPaymentMethod("UPI");
       setTransactionId("");
       setPaymentNotes("");
+
+      dispatch(fetchPayments());
+      dispatch(fetchBilling());
     } catch (error: any) {
       alert(
         error?.response?.data?.message ||
@@ -335,34 +291,18 @@ function Billing() {
     }
   };
 
-
-  const clearForm = () => {
-    setResidentId("");
-    setResidentName("");
-    setRoomNumber("");
-    setRoomFee("");
-    setUtilityFee("");
-    setAdditionalFee("");
-    setDiscount("");
-    setLateFee("");
-    setPaymentStatus("Pending");
-    setDueDate("");
-
-    setEditingId(null);
-    setShowForm(false);
+  const printInvoice = () => {
+    window.print();
   };
 
   return (
     <div>
-     
+      {/* Page heading */}
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">
-            Billing
-          </h1>
-
+          <h1 className="text-2xl font-bold text-gray-800">Billing</h1>
           <p className="text-gray-500">
-            Manage resident bills and payments
+            Manage resident bills, payments and invoices
           </p>
         </div>
 
@@ -379,27 +319,18 @@ function Billing() {
         )}
       </div>
 
-     
+      {/* Bill cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {bills.map((bill) => {
           const isOverdue =
             bill.paymentStatus !== "Paid" &&
-            bill.dueDate &&
-            new Date(bill.dueDate) < new Date();
+            Boolean(bill.dueDate) &&
+            new Date(bill.dueDate).getTime() <
+              new Date().setHours(0, 0, 0, 0);
 
-          const billPayments = payments.filter(
-            (payment) =>
-              payment.billId === bill._id
-          );
-
-          const totalPaid = billPayments.reduce(
-            (sum, payment) =>
-              sum + Number(payment.amount),
-            0
-          );
-
-          const remainingAmount =
-            bill.total - totalPaid;
+          const billPayments = getBillPayments(bill);
+          const totalPaid = getTotalPaid(bill);
+          const remainingAmount = getRemaining(bill);
 
           return (
             <div
@@ -414,25 +345,14 @@ function Billing() {
                 Room: {bill.roomNumber}
               </p>
 
-              <p>Room Fee: ₹{bill.roomFee}</p>
-
-              <p>Utility Fee: ₹{bill.utilityFee}</p>
-
-              <p>
-                Additional Fee: ₹
-                {bill.additionalFee}
-              </p>
-
-              <p>
-                Discount: ₹{bill.discount}
-              </p>
-
-              <p>
-                Late Fee: ₹{bill.lateFee}
-              </p>
+              <p>Room Fee: {money(bill.roomFee)}</p>
+              <p>Utility Fee: {money(bill.utilityFee)}</p>
+              <p>Additional Fee: {money(bill.additionalFee)}</p>
+              <p>Discount: {money(bill.discount)}</p>
+              <p>Late Fee: {money(bill.lateFee)}</p>
 
               <p className="font-bold text-lg mt-3">
-                Total: ₹{bill.total}
+                Total: {money(bill.total)}
               </p>
 
               <p className="mt-2">
@@ -444,85 +364,71 @@ function Billing() {
 
               <p className="mt-2">
                 Paid:{" "}
-                <span className="font-semibold text-green-600">
-                  ₹{totalPaid}
+                <span className="font-semibold text-green-700">
+                  {money(totalPaid)}
                 </span>
               </p>
 
               <p className="mt-1">
                 Remaining:{" "}
                 <span className="font-semibold">
-                  ₹{remainingAmount}
+                  {money(remainingAmount)}
                 </span>
               </p>
 
-             
               <p className="mt-2">
                 Due Date:{" "}
                 <span className="font-semibold">
-                  {bill.dueDate
-                    ? new Date(
-                        bill.dueDate
-                      ).toLocaleDateString()
-                    : "Not set"}
+                  {formatDate(bill.dueDate)}
                 </span>
               </p>
 
-            
               {isOverdue && (
                 <p className="mt-2 text-red-600 font-bold">
                   Overdue
                 </p>
               )}
 
-             
-              {(role === "admin" ||
-                role === "staff") &&
-                remainingAmount > 0 && (
+              <div className="flex flex-wrap gap-2 mt-4">
+                <button
+                  onClick={() => setInvoiceBill(bill)}
+                  className="bg-blue-700 text-white px-3 py-1 rounded"
+                >
+                  View Invoice
+                </button>
+
+                {(role === "admin" || role === "staff") &&
+                  remainingAmount > 0 && (
+                    <button
+                      onClick={() => openPaymentForm(bill)}
+                      className="bg-green-600 text-white px-3 py-1 rounded"
+                    >
+                      Record Payment
+                    </button>
+                  )}
+
+                {(role === "admin" || role === "staff") && (
                   <button
-                    onClick={() =>
-                      openPaymentForm(bill)
-                    }
-                    className="bg-green-600 text-white px-3 py-1 rounded mt-4"
+                    onClick={() => handleEdit(bill)}
+                    className="bg-gray-700 text-white px-3 py-1 rounded"
                   >
-                    Record Payment
+                    Edit
                   </button>
                 )}
 
-              
-              {(role === "admin" ||
-                role === "staff") && (
-                <button
-                  onClick={() =>
-                    bill._id &&
-                    handleEdit(bill)
-                  }
-                  className="bg-gray-700 text-white px-3 py-1 rounded mt-4 ml-2"
-                >
-                  Edit
-                </button>
-              )}
+                {role === "admin" && bill._id && (
+                  <button
+                    onClick={() => deleteBill(bill._id!)}
+                    className="bg-red-500 text-white px-3 py-1 rounded"
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
 
-             
-              {role === "admin" && (
-                <button
-                  onClick={() => {
-                    if (bill._id) {
-                      deleteBill(bill._id);
-                    }
-                  }}
-                  className="bg-red-500 text-white px-3 py-1 rounded mt-4 ml-2"
-                >
-                  Delete
-                </button>
-              )}
-
-           
               {billPayments.length > 0 && (
                 <div className="mt-5 border-t pt-3">
-                  <h3 className="font-semibold">
-                    Payment History
-                  </h3>
+                  <h3 className="font-semibold">Payment History</h3>
 
                   {billPayments.map((payment) => (
                     <div
@@ -530,21 +436,18 @@ function Billing() {
                       className="mt-2 bg-white p-2 rounded"
                     >
                       <p>
-                        ₹{payment.amount} -{" "}
+                        {money(Number(payment.amount))} -{" "}
                         {payment.paymentMethod}
                       </p>
 
                       {payment.transactionId && (
                         <p className="text-sm text-gray-500">
-                          Transaction:{" "}
-                          {payment.transactionId}
+                          Transaction: {payment.transactionId}
                         </p>
                       )}
 
                       <p className="text-sm text-gray-500">
-                        {new Date(
-                          payment.paymentDate
-                        ).toLocaleDateString()}
+                        {formatDate(payment.paymentDate)}
                       </p>
                     </div>
                   ))}
@@ -555,137 +458,118 @@ function Billing() {
         })}
       </div>
 
-   
+      {/* Add / Edit Bill form */}
       {showForm && (
-        <div className="w-195 rounded-lg border mt-10 p-5">
+        <div className="w-full max-w-3xl rounded-lg border mt-10 p-5 bg-white shadow">
           <h2 className="text-xl font-semibold mb-4">
-            {editingId !== null
-              ? "Edit Bill"
-              : "Add Bill"}
+            {editingId ? "Edit Bill" : "Add Bill"}
           </h2>
-          
-        <select
-           value={residentId}
-           onChange={(e) => {
-           const selectedResident = residents.find(
-           (resident) => resident._id === e.target.value
-          );
 
-          setResidentId(e.target.value);
-          setResidentName(selectedResident?.name || "");
-          setRoomNumber(selectedResident?.roomNumber || "");
-           }}
-         className="border rounded-lg px-2 py-1 mr-2 mb-3">
-        <option value="">Select Resident</option>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <select
+              value={residentId}
+              onChange={(e) => {
+                const selectedResident = residents.find(
+                  (resident) => String(resident._id) === e.target.value
+                );
 
-         {residents.filter((resident) => resident.roomNumber).map((resident) => (
-        <option key={resident._id} value={resident._id}>
-         {resident.name} - {resident.roomNumber}
-        </option>))}
-       </select>
+                setResidentId(e.target.value);
+                setResidentName(selectedResident?.name || "");
+                setRoomNumber(selectedResident?.roomNumber || "");
+              }}
+              className="border rounded-lg px-3 py-2"
+            >
+              <option value="">Select Resident</option>
 
-          <input
-            type="text"
-            placeholder="Room Number"
-            value={roomNumber}
-            readOnly
-            className="border rounded-lg px-2 py-1 mr-2 mb-3"
-          />
+              {residents
+                .filter((resident) => resident.roomNumber)
+                .map((resident) => (
+                  <option
+                    key={resident._id}
+                    value={String(resident._id)}
+                  >
+                    {resident.name} - {resident.roomNumber}
+                  </option>
+                ))}
+            </select>
 
-         
-          <input
-            type="number"
-            placeholder="Room Fee"
-            value={roomFee}
-            onChange={(e) =>
-              setRoomFee(e.target.value)
-            }
-            className="border rounded-lg px-2 py-1 mr-2 mb-3"
-          />
+            <input
+              type="text"
+              placeholder="Room Number"
+              value={roomNumber}
+              readOnly
+              className="border rounded-lg px-3 py-2 bg-gray-100"
+            />
 
-          
-          <input
-            type="number"
-            placeholder="Utility Fee"
-            value={utilityFee}
-            onChange={(e) =>
-              setUtilityFee(e.target.value)
-            }
-            className="border rounded-lg px-2 py-1 mr-2 mb-3"
-          />
+            <input
+              type="number"
+              min="0"
+              placeholder="Room Fee"
+              value={roomFee}
+              onChange={(e) => setRoomFee(e.target.value)}
+              className="border rounded-lg px-3 py-2"
+            />
 
-          <input
-            type="number"
-            placeholder="Additional Fee"
-            value={additionalFee}
-            onChange={(e) =>
-              setAdditionalFee(e.target.value)
-            }
-            className="border rounded-lg px-2 py-1 mr-2 mb-3"
-          />
+            <input
+              type="number"
+              min="0"
+              placeholder="Utility Fee"
+              value={utilityFee}
+              onChange={(e) => setUtilityFee(e.target.value)}
+              className="border rounded-lg px-3 py-2"
+            />
 
-          
-          <input
-            type="number"
-            placeholder="Discount"
-            value={discount}
-            onChange={(e) =>
-              setDiscount(e.target.value)
-            }
-            className="border rounded-lg px-2 py-1 mr-2 mb-3"
-          />
+            <input
+              type="number"
+              min="0"
+              placeholder="Additional Fee"
+              value={additionalFee}
+              onChange={(e) => setAdditionalFee(e.target.value)}
+              className="border rounded-lg px-3 py-2"
+            />
 
-         
-          <input
-            type="number"
-            placeholder="Late Fee"
-            value={lateFee}
-            onChange={(e) =>
-              setLateFee(e.target.value)
-            }
-            className="border rounded-lg px-2 py-1 mr-2 mb-3"
-          />
+            <input
+              type="number"
+              min="0"
+              placeholder="Discount"
+              value={discount}
+              onChange={(e) => setDiscount(e.target.value)}
+              className="border rounded-lg px-3 py-2"
+            />
 
-          
-          <input
-            type="date"
-            value={dueDate}
-            onChange={(e) =>
-              setDueDate(e.target.value)
-            }
-            className="border rounded-lg px-2 py-1 mr-2 mb-3"
-          />
+            <input
+              type="number"
+              min="0"
+              placeholder="Late Fee"
+              value={lateFee}
+              onChange={(e) => setLateFee(e.target.value)}
+              className="border rounded-lg px-3 py-2"
+            />
 
-          
-          <select
-            value={paymentStatus}
-            onChange={(e) =>
-              setPaymentStatus(e.target.value)
-            }
-            className="border rounded-lg px-2 py-1 mr-2 mb-3"
-          >
-            <option value="Pending">
-              Pending
-            </option>
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              className="border rounded-lg px-3 py-2"
+            />
 
-            <option value="Paid">
-              Paid
-            </option>
+            <select
+              value={paymentStatus}
+              onChange={(e) => setPaymentStatus(e.target.value)}
+              className="border rounded-lg px-3 py-2"
+            >
+              <option value="Pending">Pending</option>
+              <option value="Paid">Paid</option>
+              <option value="Partially Paid">Partially Paid</option>
+            </select>
+          </div>
 
-            <option value="Partially Paid">
-              Partially Paid
-            </option>
-          </select>
-
-          
-          <div>
+          <div className="mt-4 flex gap-2">
             <button
               onClick={saveBill}
-              className="bg-gray-900 text-white px-4 py-2 rounded-lg mr-2"
+              className="bg-gray-900 text-white px-4 py-2 rounded-lg"
             >
-              {editingId !== null
-                ? "Update Bill"
-                : "Add Bill"}
+              {editingId ? "Update Bill" : "Add Bill"}
             </button>
 
             <button
@@ -698,9 +582,9 @@ function Billing() {
         </div>
       )}
 
-     
+      {/* Record Payment form */}
       {paymentBill && (
-        <div className="w-195 rounded-lg border mt-10 p-5 bg-white shadow">
+        <div className="w-full max-w-3xl rounded-lg border mt-10 p-5 bg-white shadow">
           <h2 className="text-xl font-semibold mb-4">
             Record Payment
           </h2>
@@ -712,67 +596,58 @@ function Billing() {
             </span>
           </p>
 
-          <p className="mb-4">
-            Bill Total:{" "}
-            <span className="font-semibold">
-              ₹{paymentBill.total}
-            </span>
+          <p className="mb-2">
+            Bill Total: {money(paymentBill.total)}
           </p>
 
-          
-          <input
-            type="number"
-            placeholder="Payment Amount"
-            value={paymentAmount}
-            onChange={(e) =>
-              setPaymentAmount(e.target.value)
-            }
-            className="border rounded-lg px-2 py-1 mr-2 mb-3"
-          />
+          <p className="mb-4">
+            Remaining Balance: {money(getRemaining(paymentBill))}
+          </p>
 
-          
-          <select
-            value={paymentMethod}
-            onChange={(e) =>
-              setPaymentMethod(e.target.value)
-            }
-            className="border rounded-lg px-2 py-1 mr-2 mb-3"
-          >
-            <option value="UPI">UPI</option>
-            <option value="Cash">Cash</option>
-            <option value="Card">Card</option>
-            <option value="Bank Transfer">
-              Bank Transfer
-            </option>
-          </select>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <input
+              type="number"
+              min="0.01"
+              max={getRemaining(paymentBill)}
+              step="0.01"
+              placeholder="Payment Amount"
+              value={paymentAmount}
+              onChange={(e) => setPaymentAmount(e.target.value)}
+              className="border rounded-lg px-3 py-2"
+            />
 
-          
-          <input
-            type="text"
-            placeholder="Transaction ID (optional)"
-            value={transactionId}
-            onChange={(e) =>
-              setTransactionId(e.target.value)
-            }
-            className="border rounded-lg px-2 py-1 mr-2 mb-3"
-          />
+            <select
+              value={paymentMethod}
+              onChange={(e) => setPaymentMethod(e.target.value)}
+              className="border rounded-lg px-3 py-2"
+            >
+              <option value="UPI">UPI</option>
+              <option value="Cash">Cash</option>
+              <option value="Card">Card</option>
+              <option value="Bank Transfer">Bank Transfer</option>
+            </select>
 
-         
-          <input
-            type="text"
-            placeholder="Notes (optional)"
-            value={paymentNotes}
-            onChange={(e) =>
-              setPaymentNotes(e.target.value)
-            }
-            className="border rounded-lg px-2 py-1 mr-2 mb-3"
-          />
+            <input
+              type="text"
+              placeholder="Transaction ID (optional)"
+              value={transactionId}
+              onChange={(e) => setTransactionId(e.target.value)}
+              className="border rounded-lg px-3 py-2"
+            />
 
- 
-          <div>
+            <input
+              type="text"
+              placeholder="Notes (optional)"
+              value={paymentNotes}
+              onChange={(e) => setPaymentNotes(e.target.value)}
+              className="border rounded-lg px-3 py-2"
+            />
+          </div>
+
+          <div className="mt-4 flex gap-2">
             <button
               onClick={savePayment}
-              className="bg-green-600 text-white px-4 py-2 rounded-lg mr-2"
+              className="bg-green-600 text-white px-4 py-2 rounded-lg"
             >
               Save Payment
             </button>
@@ -786,9 +661,159 @@ function Billing() {
           </div>
         </div>
       )}
+
+      {/* Invoice modal */}
+      {invoiceBill && (
+        <div className="invoice-overlay fixed inset-0 z-50 bg-black/50 overflow-y-auto p-4 flex items-start justify-center">
+          <div className="w-full max-w-2xl bg-white rounded-lg shadow-xl my-6">
+            <div
+              id="invoice-print-area"
+              className="p-8 text-gray-800"
+            >
+              <div className="flex justify-between items-start border-b pb-5 mb-5">
+                <div>
+                  <h2 className="text-3xl font-bold">
+                    HOSTEL INVOICE
+                  </h2>
+                  <p className="text-sm text-gray-500 mt-2">
+                    Hostel Management System
+                  </p>
+                </div>
+
+                <div className="text-right text-sm">
+                  <p>
+                    <strong>Invoice No:</strong>{" "}
+                    {invoiceBill._id
+                      ? invoiceBill._id.slice(-8).toUpperCase()
+                      : "N/A"}
+                  </p>
+                  <p>
+                    <strong>Invoice Date:</strong>{" "}
+                    {new Date().toLocaleDateString("en-IN")}
+                  </p>
+                  <p>
+                    <strong>Due Date:</strong>{" "}
+                    {formatDate(invoiceBill.dueDate)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <h3 className="font-bold text-lg mb-2">
+                  Resident Details
+                </h3>
+                <p>{invoiceBill.residentName}</p>
+                <p>Room Number: {invoiceBill.roomNumber}</p>
+              </div>
+
+              <table className="w-full border-collapse mb-6">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="border p-3 text-left">
+                      Description
+                    </th>
+                    <th className="border p-3 text-right">
+                      Amount
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  <tr>
+                    <td className="border p-3">Room Fee</td>
+                    <td className="border p-3 text-right">
+                      {money(invoiceBill.roomFee)}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td className="border p-3">Utility Fee</td>
+                    <td className="border p-3 text-right">
+                      {money(invoiceBill.utilityFee)}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td className="border p-3">Additional Fee</td>
+                    <td className="border p-3 text-right">
+                      {money(invoiceBill.additionalFee)}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td className="border p-3">Late Fee</td>
+                    <td className="border p-3 text-right">
+                      {money(invoiceBill.lateFee)}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td className="border p-3">Discount</td>
+                    <td className="border p-3 text-right">
+                      -{money(invoiceBill.discount)}
+                    </td>
+                  </tr>
+                </tbody>
+
+                <tfoot>
+                  <tr>
+                    <th className="border p-3 text-left">
+                      Total Amount
+                    </th>
+                    <th className="border p-3 text-right">
+                      {money(invoiceBill.total)}
+                    </th>
+                  </tr>
+
+                  <tr>
+                    <td className="border p-3">Amount Paid</td>
+                    <td className="border p-3 text-right">
+                      {money(getTotalPaid(invoiceBill))}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <th className="border p-3 text-left">
+                      Balance Due
+                    </th>
+                    <th className="border p-3 text-right">
+                      {money(getRemaining(invoiceBill))}
+                    </th>
+                  </tr>
+                </tfoot>
+              </table>
+
+              <div className="border-t pt-4">
+                <p>
+                  <strong>Payment Status:</strong>{" "}
+                  {invoiceBill.paymentStatus}
+                </p>
+                <p className="mt-3 text-sm text-gray-500">
+                  Thank you. Please retain this invoice for your records.
+                </p>
+              </div>
+            </div>
+
+            <div className="invoice-actions p-4 border-t flex flex-wrap justify-end gap-2">
+              <button
+                onClick={printInvoice}
+                className="bg-blue-700 text-white px-4 py-2 rounded-lg"
+              >
+                Print / Save as PDF
+              </button>
+
+              <button
+                onClick={() => setInvoiceBill(null)}
+                className="bg-gray-300 text-gray-800 px-4 py-2 rounded-lg"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 export default Billing;
-

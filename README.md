@@ -1,78 +1,3 @@
-# React + TypeScript + Vite
-
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
-
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
-```
-
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-```
 #  Hostel Management System — Frontend
 
 A modern Hostel Management System frontend built using React, TypeScript, Redux Toolkit, React Router, Axios, and Tailwind CSS.
@@ -123,22 +48,29 @@ https://hostelmanagementsystemapp.netlify.app/login
 * Emergency contact information
 * Resident login account
 
+### Resident Profile Page
+
+* View detailed resident information
+* View contact details and emergency contact information
+* View current room allocation
+* View check-in and expected check-out dates
+* View room allocation history
+* Retrieve individual resident information from the backend
+
 ###  Room Management
 
-* View rooms
-* Add rooms
-* Edit rooms
-* Delete rooms
-* Room allocation
-* Occupancy tracking
-* Room availability
+* View rooms retrieved from the backend
+* Add, edit, and delete rooms
+* Manage room allocation
+* Track room occupancy
+* View room availability
 
 ###  Maintenance Management
 
 * Create maintenance requests
 * Set priority
 * Track request status
-* Assign requests to staff
+* View and manage maintenance requests according to user permissions
 * Maintenance notifications
 
 ###  Billing Management
@@ -152,13 +84,11 @@ https://hostelmanagementsystemapp.netlify.app/login
 
 ### Payment Management
 
-* Record payments
-* Cash
-* UPI
-* Card
-* Bank Transfer
-* Transaction ID
-* Payment history
+* Record payment information
+* Support recording payment methods such as cash, UPI, card, and bank transfer, where configured
+* Store transaction IDs and payment history where implemented
+* Track payment status
+Note: Online payment gateway integration is not yet implemented.
 
 ###  Notifications
 
@@ -166,23 +96,22 @@ https://hostelmanagementsystemapp.netlify.app/login
 * Maintenance assignment notifications
 * Pending payment notifications
 * Overdue notifications
-* Read/unread notifications
+* Read & unread notifications
 
 ###  Staff Management
 
-* Add staff
-* View staff
-* Edit staff
+* Add staff & View staff
+* Edit staff information
 * Delete staff
 * Admin-only staff management
 
 ###  Reports
 
-* Resident information
-* Room information
-* Maintenance information
-* Billing information
-* Hostel reports
+* View resident information
+* View room information
+* View maintenance information
+* View billing information
+* Generate or view hostel reports, according to implemented functionality
 
 ##  User Roles
 
@@ -251,7 +180,6 @@ Clone the frontend repository:
 ```bash
 git clone https://github.com/sudhayini/hostel-management-frontend.git
 ```
-
 Enter the frontend folder:
 
 ```bash
@@ -302,6 +230,10 @@ The interface is built using Tailwind CSS and is designed to work across differe
 * **Backend:** Render
 * **Database:** MongoDB Atlas
 
+## Database Backup
+
+A manual MongoDB database backup was created using MongoDB Database Tools. This backup procedure is performed separately from the frontend application and is not an automatic backup feature.
+
 ##  Demo Login Credentials
 
 The following accounts can be used to test the deployed application.
@@ -319,9 +251,6 @@ All resident accounts created through the system use the default password:(all r
 ```text
 Resident@123
 ```
-
-  **Note:** These credentials are provided for project demonstration/testing purposes only. Do not use these default passwords for a production application.
-
 
 ## Author
 

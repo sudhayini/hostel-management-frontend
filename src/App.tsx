@@ -1,3 +1,4 @@
+
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Layout from "./layouts/Layout";
 
@@ -15,32 +16,47 @@ import ProtectedRoute from "./components/ProtecteRoute";
 import RoleRoute from "./components/RoleRute";
 import ResidentProfile from "./pages/ResidentProfile";
 import Payments from "./pages/Payments";
-
-
+import Notifications from "./pages/Notifications";
+import ResidentMockPayments from "./pages/ResidentMockPayments";
 
 function App() {
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
+
   return (
     <BrowserRouter>
       <Routes>
-
         <Route path="/login" element={<Login />} />
 
         <Route element={<ProtectedRoute />}>
           <Route path="/" element={<Layout />}>
-
             <Route path="dashboard" element={<Dashboard />} />
+
             <Route path="rooms" element={<Rooms />} />
+
             <Route path="residents" element={<Residents />} />
-            <Route path="residents/:id" element={<ResidentProfile />}/>
+            <Route path="residents/:id" element={<ResidentProfile />} />
 
             <Route path="maintenance" element={<Maintenance />} />
+
             <Route path="billing" element={<Billing />} />
 
-            {/* Admin and Staff */}
-            <Route element={<RoleRoute allowedRoles={["admin", "staff"]} />}>
-             <Route path="payments" element={<Payments />} />
-             </Route>
-
+            {/* Payments */}
+            <Route
+              element={
+                <RoleRoute allowedRoles={["admin", "staff", "resident"]} />
+              }
+            >
+              <Route
+                path="payments"
+                element={
+                  user.role === "resident" ? (
+                    <ResidentMockPayments />
+                  ) : (
+                    <Payments />
+                  )
+                }
+              />
+            </Route>
 
             {/* Admin Only */}
             <Route element={<RoleRoute allowedRoles={["admin"]} />}>
@@ -48,9 +64,12 @@ function App() {
               <Route path="staff" element={<Staff />} />
             </Route>
 
+            {/* Admin and Staff */}
+            <Route element={<RoleRoute allowedRoles={["admin", "staff"]} />}>
+              <Route path="notifications" element={<Notifications />} />
+            </Route>
           </Route>
         </Route>
-
       </Routes>
     </BrowserRouter>
   );

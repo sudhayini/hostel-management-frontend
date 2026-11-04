@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { type AppDispatch, type RootState } from "../store/store";
+import api from "../services/api";
 
 import {
   createBilling,
@@ -29,6 +30,31 @@ type Bill = {
   dueDate: string;
 };
 
+type Installment = {
+  _id: string;
+  billId: string;
+  installmentNumber: number;
+  amount: number;
+  amountPaid: number;
+  dueDate: string;
+  status: string;
+};
+
+type PaymentRecord = {
+  _id?: string;
+  billId: string;
+  installmentId?: string | null;
+  residentName: string;
+  amount: number;
+  paymentMethod: string;
+  paymentDate: string;
+  transactionId?: string;
+  notes?: string;
+  status?: string;
+};
+
+const INSTALLMENT_THRESHOLD = 10000;
+
 const money = (amount: number) =>
   `₹${Number(amount || 0).toLocaleString("en-IN", {
     minimumFractionDigits: 2,
@@ -45,6 +71,19 @@ const formatDate = (date?: string) => {
     : parsed.toLocaleDateString("en-IN");
 };
 
+const createIdempotencyKey = () => {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
+    return crypto.randomUUID();
+  }
+
+  return `payment-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2)}`;
+};
+
 function Billing() {
   const dispatch = useDispatch<AppDispatch>();
 
@@ -53,14 +92,10 @@ function Billing() {
 
   const bills = useSelector((state: RootState) => state.billing);
   const residents = useSelector((state: RootState) => state.residents);
-  const payments = useSelector((state: RootState) => state.payments);
+  const payments = useSelector(
+    (state: RootState) => state.payments
+  ) as PaymentRecord[];
 
-  useEffect(() => {
-    dispatch(fetchBilling());
-    dispatch(fetchPayments());
-  }, [dispatch]);
-
-  // Bill form state
   const [residentId, setResidentId] = useState("");
   const [residentName, setResidentName] = useState("");
   const [roomNumber, setRoomNumber] = useState("");
@@ -73,19 +108,59 @@ function Billing() {
   const [dueDate, setDueDate] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [savingBill, setSavingBill] = useState(false);
 
-  // Payment form state
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("UPI");
   const [transactionId, setTransactionId] = useState("");
   const [paymentNotes, setPaymentNotes] = useState("");
+  const [selectedInstallmentId, setSelectedInstallmentId] =
+    useState("");
+  const [savingPayment, setSavingPayment] = useState(false);
+  const [paymentAttemptKey, setPaymentAttemptKey] = useState("");
 
-  // Invoice state
   const [invoiceBill, setInvoiceBill] = useState<Bill | null>(null);
 
+  const [installmentsByBill, setInstallmentsByBill] = useState<
+    Record<string, Installment[]>
+  >({});
+  const [creatingPlanFor, setCreatingPlanFor] = useState<
+    string | null
+  >(null);
+  const [planErrors, setPlanErrors] = useState<
+    Record<string, string>
+  >({});
+  const [loadingPlans, setLoadingPlans] = useState<
+    Record<string, boolean>
+  >({});
+
+  const isStaff = role === "admin" || role === "staff";
+
+  useEffect(() => {
+    dispatch(fetchBilling());
+    dispatch(fetchPayments());
+  }, [dispatch]);
+
+  // Only successful payments (or legacy records without a status)
+  // count toward the bill balance.
+  const isSuccessfulPayment = (payment: PaymentRecord) => {
+    const status = String(payment.status || "").toLowerCase();
+
+    return (
+      !status ||
+      status === "success" ||
+      status === "successful" ||
+      status === "paid"
+    );
+  };
+
   const getBillPayments = (bill: Bill) =>
-    payments.filter((payment) => payment.billId === bill._id);
+    payments.filter(
+      (payment) =>
+        String(payment.billId) === String(bill._id) &&
+        isSuccessfulPayment(payment)
+    );
 
   const getTotalPaid = (bill: Bill) =>
     getBillPayments(bill).reduce(
@@ -94,7 +169,182 @@ function Billing() {
     );
 
   const getRemaining = (bill: Bill) =>
-    Math.max(0, Number(bill.total || 0) - getTotalPaid(bill));
+    Math.max(
+      0,
+      Number(bill.total || 0) - getTotalPaid(bill)
+    );
+
+  const getInstallmentRemaining = (item: Installment) =>
+    Math.max(
+      0,
+      Number(item.amount || 0) - Number(item.amountPaid || 0)
+    );
+
+  const paymentPlan =
+    paymentBill?._id
+      ? installmentsByBill[paymentBill._id] || []
+      : [];
+
+  const hasInstallmentPlan = paymentPlan.length > 0;
+
+  const selectedInstallment = paymentPlan.find(
+    (item) => item._id === selectedInstallmentId
+  );
+
+  const paymentRemaining = paymentBill
+    ? getRemaining(paymentBill)
+    : 0;
+
+  const selectedInstallmentRemaining = selectedInstallment
+    ? getInstallmentRemaining(selectedInstallment)
+    : 0;
+
+  const paymentMaximum = hasInstallmentPlan
+    ? Math.min(paymentRemaining, selectedInstallmentRemaining)
+    : paymentRemaining;
+
+  // Load existing plans. A missing plan is treated as an empty list.
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPlans = async () => {
+      const billList = bills.filter((bill) => Boolean(bill._id));
+
+      if (!billList.length) return;
+
+      setLoadingPlans((previous) => {
+        const next = { ...previous };
+
+        billList.forEach((bill) => {
+          next[bill._id!] = true;
+        });
+
+        return next;
+      });
+
+      const results = await Promise.all(
+        billList.map(async (bill) => {
+          const billId = bill._id!;
+
+          try {
+            const response = await api.get(
+              `/installments/${billId}`
+            );
+
+            const data = response.data;
+            const list = Array.isArray(data)
+              ? data
+              : Array.isArray(data?.installments)
+                ? data.installments
+                : [];
+
+            return {
+              billId,
+              installments: list as Installment[],
+              error: "",
+            };
+          } catch (error: any) {
+            // A 404 commonly means no plan has been created yet.
+            if (error?.response?.status === 404) {
+              return {
+                billId,
+                installments: [] as Installment[],
+                error: "",
+              };
+            }
+
+            return {
+              billId,
+              installments: [] as Installment[],
+              error:
+                "Could not load this installment plan. Please refresh and try again.",
+            };
+          }
+        })
+      );
+
+      if (cancelled) return;
+
+      setInstallmentsByBill((previous) => {
+        const next = { ...previous };
+
+        results.forEach((result) => {
+          if (!result.error) {
+            next[result.billId] = result.installments;
+          }
+        });
+
+        return next;
+      });
+
+      setPlanErrors((previous) => {
+        const next = { ...previous };
+
+        results.forEach((result) => {
+          if (result.error) {
+            next[result.billId] = result.error;
+          } else {
+            delete next[result.billId];
+          }
+        });
+
+        return next;
+      });
+
+      setLoadingPlans((previous) => {
+        const next = { ...previous };
+
+        results.forEach((result) => {
+          delete next[result.billId];
+        });
+
+        return next;
+      });
+    };
+
+    void loadPlans();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bills]);
+
+  const refreshPlansForBill = async (billId: string) => {
+    try {
+      const response = await api.get(`/installments/${billId}`);
+      const data = response.data;
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.installments)
+          ? data.installments
+          : [];
+
+      setInstallmentsByBill((previous) => ({
+        ...previous,
+        [billId]: list as Installment[],
+      }));
+
+      setPlanErrors((previous) => {
+        const next = { ...previous };
+        delete next[billId];
+        return next;
+      });
+    } catch (error: any) {
+      if (error?.response?.status === 404) {
+        setInstallmentsByBill((previous) => ({
+          ...previous,
+          [billId]: [],
+        }));
+        return;
+      }
+
+      setPlanErrors((previous) => ({
+        ...previous,
+        [billId]:
+          "Could not refresh this installment plan. Please refresh the page.",
+      }));
+    }
+  };
 
   const clearForm = () => {
     setResidentId("");
@@ -111,8 +361,9 @@ function Billing() {
     setShowForm(false);
   };
 
-  // Create or update a bill
   const saveBill = async () => {
+    if (savingBill) return;
+
     if (!residentId && !residentName.trim()) {
       alert("Please select a resident");
       return;
@@ -136,7 +387,11 @@ function Billing() {
       lateFee: Number(lateFee || 0),
     };
 
-    if (Object.values(amounts).some((amount) => !Number.isFinite(amount) || amount < 0)) {
+    if (
+      Object.values(amounts).some(
+        (amount) => !Number.isFinite(amount) || amount < 0
+      )
+    ) {
       alert("Amounts must be valid non-negative numbers");
       return;
     }
@@ -167,6 +422,8 @@ function Billing() {
       dueDate,
     };
 
+    setSavingBill(true);
+
     try {
       if (editingId) {
         await dispatch(
@@ -183,13 +440,15 @@ function Billing() {
       }
 
       clearForm();
-      dispatch(fetchBilling());
+      await dispatch(fetchBilling());
     } catch (error: any) {
       alert(
         error?.response?.data?.message ||
           error?.message ||
           "Failed to save bill"
       );
+    } finally {
+      setSavingBill(false);
     }
   };
 
@@ -203,7 +462,6 @@ function Billing() {
     setDiscount(String(bill.discount ?? 0));
     setLateFee(String(bill.lateFee ?? 0));
     setPaymentStatus(bill.paymentStatus);
-
     setDueDate(
       bill.dueDate
         ? new Date(bill.dueDate).toISOString().split("T")[0]
@@ -222,7 +480,14 @@ function Billing() {
     try {
       await dispatch(removeBilling(id)).unwrap();
       alert("Bill deleted successfully");
-      dispatch(fetchBilling());
+
+      setInstallmentsByBill((previous) => {
+        const next = { ...previous };
+        delete next[id];
+        return next;
+      });
+
+      await dispatch(fetchBilling());
     } catch (error: any) {
       alert(
         error?.response?.data?.message ||
@@ -232,15 +497,27 @@ function Billing() {
     }
   };
 
-  const openPaymentForm = (bill: Bill) => {
+  const openPaymentForm = async (bill: Bill) => {
+    if (!bill._id) {
+      alert("Bill ID not found");
+      return;
+    }
+
     setPaymentBill(bill);
     setPaymentAmount("");
     setPaymentMethod("UPI");
     setTransactionId("");
     setPaymentNotes("");
+    setSelectedInstallmentId("");
+    setPaymentAttemptKey(createIdempotencyKey());
+
+    // Ensure the form uses the latest plan rather than stale card data.
+    await refreshPlansForBill(bill._id);
   };
 
   const savePayment = async () => {
+    if (savingPayment) return;
+
     if (!paymentBill?._id) {
       alert("Bill ID not found");
       return;
@@ -248,16 +525,70 @@ function Billing() {
 
     const amount = Number(paymentAmount);
     const remaining = getRemaining(paymentBill);
+    const plan = installmentsByBill[paymentBill._id] || [];
+    const requiresInstallments =
+      Number(paymentBill.total) > INSTALLMENT_THRESHOLD;
 
     if (!paymentAmount || !Number.isFinite(amount) || amount <= 0) {
       alert("Enter a valid payment amount greater than zero");
       return;
     }
 
-    if (amount > remaining) {
-      alert(`Payment cannot exceed the remaining balance of ${money(remaining)}`);
+    if (remaining <= 0) {
+      alert("This bill has no remaining balance");
       return;
     }
+
+    if (amount > remaining) {
+      alert(
+        `Payment cannot exceed the remaining bill balance of ${money(remaining)}`
+      );
+      return;
+    }
+
+    if (requiresInstallments && plan.length === 0) {
+      alert(
+        "This bill requires a two-installment plan. Create the plan before recording payment."
+      );
+      return;
+    }
+
+    let installmentId: string | undefined;
+
+    if (plan.length > 0) {
+      if (!selectedInstallmentId) {
+        alert("Please select an installment for this payment");
+        return;
+      }
+
+      const installment = plan.find(
+        (item) => item._id === selectedInstallmentId
+      );
+
+      if (!installment) {
+        alert("The selected installment could not be found");
+        return;
+      }
+
+      const installmentRemaining =
+        getInstallmentRemaining(installment);
+
+      if (installmentRemaining <= 0) {
+        alert("This installment has already been fully paid");
+        return;
+      }
+
+      if (amount > installmentRemaining) {
+        alert(
+          `Payment cannot exceed this installment's remaining balance of ${money(installmentRemaining)}`
+        );
+        return;
+      }
+
+      installmentId = installment._id;
+    }
+
+    setSavingPayment(true);
 
     try {
       await dispatch(
@@ -267,27 +598,138 @@ function Billing() {
           amount,
           paymentMethod,
           paymentDate: new Date().toISOString(),
-          transactionId,
-          notes: paymentNotes,
+          transactionId: transactionId.trim(),
+          notes: paymentNotes.trim(),
+          ...(installmentId ? { installmentId } : {}),
+          idempotencyKey:
+            paymentAttemptKey || createIdempotencyKey(),
         })
       ).unwrap();
 
-      alert("Payment recorded successfully");
+      alert(
+        installmentId
+          ? "Installment payment recorded successfully"
+          : "Payment recorded successfully"
+      );
+
+      const billId = paymentBill._id;
 
       setPaymentBill(null);
       setPaymentAmount("");
       setPaymentMethod("UPI");
       setTransactionId("");
       setPaymentNotes("");
+      setSelectedInstallmentId("");
+      setPaymentAttemptKey("");
 
-      dispatch(fetchPayments());
-      dispatch(fetchBilling());
+      await Promise.all([
+        dispatch(fetchPayments()),
+        dispatch(fetchBilling()),
+        refreshPlansForBill(billId),
+      ]);
     } catch (error: any) {
       alert(
         error?.response?.data?.message ||
           error?.message ||
-          "Failed to record payment"
+          "Failed to record payment. You can retry the same payment attempt."
       );
+
+      // Keep the idempotency key so retrying the same attempt does not
+      // accidentally create a second payment.
+    } finally {
+      setSavingPayment(false);
+    }
+  };
+
+  const createInstallmentPlan = async (bill: Bill) => {
+    if (!bill._id) {
+      alert("Bill ID not found");
+      return;
+    }
+
+    if (Number(bill.total) <= INSTALLMENT_THRESHOLD) {
+      alert(
+        "Installment plans are available only for bills above ₹10,000"
+      );
+      return;
+    }
+
+    if (getRemaining(bill) <= 0) {
+      alert("This bill has no remaining balance");
+      return;
+    }
+
+    if (loadingPlans[bill._id]) {
+      alert("Please wait while the installment information loads");
+      return;
+    }
+
+    if (planErrors[bill._id]) {
+      alert(
+        "Please resolve the installment loading error before creating a plan"
+      );
+      return;
+    }
+
+    if (installmentsByBill[bill._id]?.length) {
+      alert("An installment plan already exists for this bill");
+      return;
+    }
+
+    const firstDueDate = new Date(bill.dueDate);
+
+    if (Number.isNaN(firstDueDate.getTime())) {
+      alert("Please set a valid bill due date first");
+      return;
+    }
+
+    const secondDueDate = new Date(firstDueDate);
+    secondDueDate.setDate(secondDueDate.getDate() + 15);
+
+    setCreatingPlanFor(bill._id);
+
+    try {
+      const response = await api.post(
+        `/installments/${bill._id}`,
+        {
+          dueDates: [
+            firstDueDate.toISOString(),
+            secondDueDate.toISOString(),
+          ],
+        }
+      );
+
+      const data = response.data;
+      const created = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.installments)
+          ? data.installments
+          : [];
+
+      if (created.length !== 2) {
+        // Read the plan again in case the API created it but returned
+        // a different response shape.
+        await refreshPlansForBill(bill._id);
+
+        throw new Error(
+          "The server did not return exactly two installments. Refresh the bill and verify the plan before trying again."
+        );
+      }
+
+      setInstallmentsByBill((previous) => ({
+        ...previous,
+        [bill._id!]: created,
+      }));
+
+      alert("Two-installment plan created successfully");
+    } catch (error: any) {
+      alert(
+        error?.response?.data?.message ||
+          error?.message ||
+          "Failed to create installment plan"
+      );
+    } finally {
+      setCreatingPlanFor(null);
     }
   };
 
@@ -297,16 +739,17 @@ function Billing() {
 
   return (
     <div>
-      {/* Page heading */}
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Billing</h1>
+          <h1 className="text-2xl font-bold text-gray-800">
+            Billing
+          </h1>
           <p className="text-gray-500">
             Manage resident bills, payments and invoices
           </p>
         </div>
 
-        {(role === "admin" || role === "staff") && (
+        {isStaff && (
           <button
             onClick={() => {
               clearForm();
@@ -319,7 +762,6 @@ function Billing() {
         )}
       </div>
 
-      {/* Bill cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {bills.map((bill) => {
           const isOverdue =
@@ -331,6 +773,10 @@ function Billing() {
           const billPayments = getBillPayments(bill);
           const totalPaid = getTotalPaid(bill);
           const remainingAmount = getRemaining(bill);
+          const billId = bill._id || "";
+          const plan = billId
+            ? installmentsByBill[billId] || []
+            : [];
 
           return (
             <div
@@ -397,17 +843,16 @@ function Billing() {
                   View Invoice
                 </button>
 
-                {(role === "admin" || role === "staff") &&
-                  remainingAmount > 0 && (
-                    <button
-                      onClick={() => openPaymentForm(bill)}
-                      className="bg-green-600 text-white px-3 py-1 rounded"
-                    >
-                      Record Payment
-                    </button>
-                  )}
+                {isStaff && remainingAmount > 0 && (
+                  <button
+                    onClick={() => void openPaymentForm(bill)}
+                    className="bg-green-600 text-white px-3 py-1 rounded"
+                  >
+                    Record Payment
+                  </button>
+                )}
 
-                {(role === "admin" || role === "staff") && (
+                {isStaff && (
                   <button
                     onClick={() => handleEdit(bill)}
                     className="bg-gray-700 text-white px-3 py-1 rounded"
@@ -418,7 +863,7 @@ function Billing() {
 
                 {role === "admin" && bill._id && (
                   <button
-                    onClick={() => deleteBill(bill._id!)}
+                    onClick={() => void deleteBill(bill._id!)}
                     className="bg-red-500 text-white px-3 py-1 rounded"
                   >
                     Delete
@@ -426,31 +871,102 @@ function Billing() {
                 )}
               </div>
 
+              {isStaff &&
+                Number(bill.total) > INSTALLMENT_THRESHOLD &&
+                remainingAmount > 0 &&
+                bill._id &&
+                !plan.length &&
+                !planErrors[bill._id] && (
+                  <div className="mt-4">
+                    <button
+                      onClick={() => void createInstallmentPlan(bill)}
+                      disabled={
+                        creatingPlanFor === bill._id ||
+                        loadingPlans[bill._id]
+                      }
+                      className="bg-purple-700 text-white px-3 py-2 rounded disabled:opacity-50"
+                    >
+                      {creatingPlanFor === bill._id
+                        ? "Creating Plan..."
+                        : loadingPlans[bill._id]
+                          ? "Loading Plan..."
+                          : "Create 2-Installment Plan"}
+                    </button>
+                  </div>
+                )}
+
+              {bill._id && planErrors[bill._id] && (
+                <p className="mt-3 text-sm text-red-700">
+                  {planErrors[bill._id]}
+                </p>
+              )}
+
+              {plan.length > 0 && (
+                <div className="mt-5 border-t border-gray-400 pt-3">
+                  <h3 className="font-semibold">
+                    Installment Plan
+                  </h3>
+
+                  {plan.map((item) => (
+                    <div
+                      key={item._id}
+                      className="mt-2 bg-white p-3 rounded"
+                    >
+                      <p className="font-medium">
+                        Installment {item.installmentNumber}
+                      </p>
+                      <p>Amount: {money(item.amount)}</p>
+                      <p>Paid: {money(item.amountPaid)}</p>
+                      <p>
+                        Remaining:{" "}
+                        {money(getInstallmentRemaining(item))}
+                      </p>
+                      <p>Due: {formatDate(item.dueDate)}</p>
+                      <p>Status: {item.status}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {billPayments.length > 0 && (
                 <div className="mt-5 border-t pt-3">
                   <h3 className="font-semibold">Payment History</h3>
 
-                  {billPayments.map((payment) => (
-                    <div
-                      key={payment._id}
-                      className="mt-2 bg-white p-2 rounded"
-                    >
-                      <p>
-                        {money(Number(payment.amount))} -{" "}
-                        {payment.paymentMethod}
-                      </p>
+                  {billPayments.map((payment) => {
+                    const linkedInstallment = plan.find(
+                      (item) =>
+                        item._id === payment.installmentId
+                    );
 
-                      {payment.transactionId && (
-                        <p className="text-sm text-gray-500">
-                          Transaction: {payment.transactionId}
+                    return (
+                      <div
+                        key={payment._id}
+                        className="mt-2 bg-white p-2 rounded"
+                      >
+                        <p>
+                          {money(Number(payment.amount))} -{" "}
+                          {payment.paymentMethod}
                         </p>
-                      )}
 
-                      <p className="text-sm text-gray-500">
-                        {formatDate(payment.paymentDate)}
-                      </p>
-                    </div>
-                  ))}
+                        {linkedInstallment && (
+                          <p className="text-sm text-purple-800">
+                            Installment{" "}
+                            {linkedInstallment.installmentNumber}
+                          </p>
+                        )}
+
+                        {payment.transactionId && (
+                          <p className="text-sm text-gray-500">
+                            Transaction: {payment.transactionId}
+                          </p>
+                        )}
+
+                        <p className="text-sm text-gray-500">
+                          {formatDate(payment.paymentDate)}
+                        </p>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -458,7 +974,6 @@ function Billing() {
         })}
       </div>
 
-      {/* Add / Edit Bill form */}
       {showForm && (
         <div className="w-full max-w-3xl rounded-lg border mt-10 p-5 bg-white shadow">
           <h2 className="text-xl font-semibold mb-4">
@@ -470,7 +985,8 @@ function Billing() {
               value={residentId}
               onChange={(e) => {
                 const selectedResident = residents.find(
-                  (resident) => String(resident._id) === e.target.value
+                  (resident) =>
+                    String(resident._id) === e.target.value
                 );
 
                 setResidentId(e.target.value);
@@ -566,14 +1082,20 @@ function Billing() {
 
           <div className="mt-4 flex gap-2">
             <button
-              onClick={saveBill}
-              className="bg-gray-900 text-white px-4 py-2 rounded-lg"
+              onClick={() => void saveBill()}
+              disabled={savingBill}
+              className="bg-gray-900 text-white px-4 py-2 rounded-lg disabled:opacity-50"
             >
-              {editingId ? "Update Bill" : "Add Bill"}
+              {savingBill
+                ? "Saving..."
+                : editingId
+                  ? "Update Bill"
+                  : "Add Bill"}
             </button>
 
             <button
               onClick={clearForm}
+              disabled={savingBill}
               className="bg-gray-300 text-gray-800 px-4 py-2 rounded-lg"
             >
               Cancel
@@ -582,7 +1104,6 @@ function Billing() {
         </div>
       )}
 
-      {/* Record Payment form */}
       {paymentBill && (
         <div className="w-full max-w-3xl rounded-lg border mt-10 p-5 bg-white shadow">
           <h2 className="text-xl font-semibold mb-4">
@@ -601,31 +1122,136 @@ function Billing() {
           </p>
 
           <p className="mb-4">
-            Remaining Balance: {money(getRemaining(paymentBill))}
+            Remaining Bill Balance: {money(paymentRemaining)}
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <input
-              type="number"
-              min="0.01"
-              max={getRemaining(paymentBill)}
-              step="0.01"
-              placeholder="Payment Amount"
-              value={paymentAmount}
-              onChange={(e) => setPaymentAmount(e.target.value)}
-              className="border rounded-lg px-3 py-2"
-            />
+          {Number(paymentBill.total) > INSTALLMENT_THRESHOLD &&
+            !hasInstallmentPlan && (
+              <p className="mb-4 rounded bg-yellow-100 p-3 text-yellow-900">
+                This bill requires a two-installment plan. Create the
+                plan before recording a payment.
+              </p>
+            )}
 
-            <select
-              value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value)}
-              className="border rounded-lg px-3 py-2"
-            >
-              <option value="UPI">UPI</option>
-              <option value="Cash">Cash</option>
-              <option value="Card">Card</option>
-              <option value="Bank Transfer">Bank Transfer</option>
-            </select>
+          {paymentBill._id && planErrors[paymentBill._id] && (
+            <p className="mb-4 rounded bg-red-100 p-3 text-red-800">
+              {planErrors[paymentBill._id]}
+            </p>
+          )}
+
+          {hasInstallmentPlan && (
+            <div className="mb-4">
+              <label
+                htmlFor="payment-installment"
+                className="block font-medium mb-2"
+              >
+                Select installment
+              </label>
+
+              <select
+                id="payment-installment"
+                value={selectedInstallmentId}
+                onChange={(e) => {
+                  setSelectedInstallmentId(e.target.value);
+                  setPaymentAmount("");
+                }}
+                className="w-full border rounded-lg px-3 py-2"
+              >
+                <option value="">Choose an installment</option>
+
+                {paymentPlan.map((item) => {
+                  const remaining = getInstallmentRemaining(item);
+
+                  return (
+                    <option
+                      key={item._id}
+                      value={item._id}
+                      disabled={remaining <= 0}
+                    >
+                      Installment {item.installmentNumber} —{" "}
+                      {money(remaining)} remaining — Due{" "}
+                      {formatDate(item.dueDate)}
+                    </option>
+                  );
+                })}
+              </select>
+
+              {selectedInstallment && (
+                <div className="mt-3 rounded bg-purple-50 p-3">
+                  <p>
+                    Selected installment:{" "}
+                    <strong>
+                      {selectedInstallment.installmentNumber}
+                    </strong>
+                  </p>
+                  <p>
+                    Original amount:{" "}
+                    {money(selectedInstallment.amount)}
+                  </p>
+                  <p>
+                    Already paid:{" "}
+                    {money(selectedInstallment.amountPaid)}
+                  </p>
+                  <p>
+                    Remaining installment balance:{" "}
+                    <strong>
+                      {money(selectedInstallmentRemaining)}
+                    </strong>
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label
+                htmlFor="payment-amount"
+                className="block text-sm font-medium mb-1"
+              >
+                Payment Amount
+              </label>
+
+              <input
+                id="payment-amount"
+                type="number"
+                min="0.01"
+                max={paymentMaximum}
+                step="0.01"
+                placeholder="Payment Amount"
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2"
+              />
+
+              {hasInstallmentPlan && selectedInstallment && (
+                <p className="mt-1 text-sm text-gray-600">
+                  Maximum for this payment: {money(paymentMaximum)}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label
+                htmlFor="payment-method"
+                className="block text-sm font-medium mb-1"
+              >
+                Payment Method
+              </label>
+
+              <select
+                id="payment-method"
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2"
+              >
+                <option value="UPI">UPI</option>
+                <option value="Cash">Cash</option>
+                <option value="Card">Card</option>
+                <option value="Bank Transfer">Bank Transfer</option>
+                <option value="Razorpay">Razorpay</option>
+              </select>
+            </div>
 
             <input
               type="text"
@@ -646,15 +1272,36 @@ function Billing() {
 
           <div className="mt-4 flex gap-2">
             <button
-              onClick={savePayment}
-              className="bg-green-600 text-white px-4 py-2 rounded-lg"
+              onClick={() => void savePayment()}
+              disabled={
+                savingPayment ||
+                paymentRemaining <= 0 ||
+                (Number(paymentBill.total) > INSTALLMENT_THRESHOLD &&
+                  !hasInstallmentPlan) ||
+                (hasInstallmentPlan &&
+                  (!selectedInstallment ||
+                    selectedInstallmentRemaining <= 0)) ||
+                Boolean(
+                  paymentBill._id &&
+                    planErrors[paymentBill._id]
+                )
+              }
+              className="bg-green-600 text-white px-4 py-2 rounded-lg disabled:opacity-50"
             >
-              Save Payment
+              {savingPayment ? "Saving Payment..." : "Save Payment"}
             </button>
 
             <button
-              onClick={() => setPaymentBill(null)}
-              className="bg-gray-300 text-gray-800 px-4 py-2 rounded-lg"
+              onClick={() => {
+                if (savingPayment) return;
+
+                setPaymentBill(null);
+                setPaymentAmount("");
+                setSelectedInstallmentId("");
+                setPaymentAttemptKey("");
+              }}
+              disabled={savingPayment}
+              className="bg-gray-300 text-gray-800 px-4 py-2 rounded-lg disabled:opacity-50"
             >
               Cancel
             </button>
@@ -662,7 +1309,6 @@ function Billing() {
         </div>
       )}
 
-      {/* Invoice modal */}
       {invoiceBill && (
         <div className="invoice-overlay fixed inset-0 z-50 bg-black/50 overflow-y-auto p-4 flex items-start justify-center">
           <div className="w-full max-w-2xl bg-white rounded-lg shadow-xl my-6">
@@ -725,28 +1371,24 @@ function Billing() {
                       {money(invoiceBill.roomFee)}
                     </td>
                   </tr>
-
                   <tr>
                     <td className="border p-3">Utility Fee</td>
                     <td className="border p-3 text-right">
                       {money(invoiceBill.utilityFee)}
                     </td>
                   </tr>
-
                   <tr>
                     <td className="border p-3">Additional Fee</td>
                     <td className="border p-3 text-right">
                       {money(invoiceBill.additionalFee)}
                     </td>
                   </tr>
-
                   <tr>
                     <td className="border p-3">Late Fee</td>
                     <td className="border p-3 text-right">
                       {money(invoiceBill.lateFee)}
                     </td>
                   </tr>
-
                   <tr>
                     <td className="border p-3">Discount</td>
                     <td className="border p-3 text-right">
@@ -764,14 +1406,12 @@ function Billing() {
                       {money(invoiceBill.total)}
                     </th>
                   </tr>
-
                   <tr>
                     <td className="border p-3">Amount Paid</td>
                     <td className="border p-3 text-right">
                       {money(getTotalPaid(invoiceBill))}
                     </td>
                   </tr>
-
                   <tr>
                     <th className="border p-3 text-left">
                       Balance Due
@@ -789,7 +1429,8 @@ function Billing() {
                   {invoiceBill.paymentStatus}
                 </p>
                 <p className="mt-3 text-sm text-gray-500">
-                  Thank you. Please retain this invoice for your records.
+                  Thank you. Please retain this invoice for your
+                  records.
                 </p>
               </div>
             </div>

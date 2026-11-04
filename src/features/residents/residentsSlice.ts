@@ -13,6 +13,8 @@ export type Resident = {
   phone: string;
   email: string;
   roomNumber: string;
+  preferredRoomNumber?: string;
+  preferredRoomType?: "Single" | "Shared" | "Any";
   emergencyContactName: string;
   emergencyContactPhone: string;
   checkInDate?: string | null;
@@ -25,6 +27,8 @@ type ResidentInput = {
   phone: string;
   email: string;
   roomNumber: string;
+  preferredRoomNumber?: string;
+  preferredRoomType?: "Single" | "Shared" | "Any";
   emergencyContactName: string;
   emergencyContactPhone: string;
   checkInDate?: string | null;

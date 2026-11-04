@@ -6,7 +6,7 @@ import maintenanceReducer from "../features/maintenance/maintenanceSlice";
 import billingReducer from "../features/billing/billingSlice";
 import notificationsReducer from "../features/notifications/notificationSlice";
 import paymentsReducer from "../features/payments/paymentsSlice";
-
+import expensesReducer from "../features/expenses/expensesSlice";
 export const store = configureStore({
   reducer: {
     rooms: roomsReducer,
@@ -15,6 +15,7 @@ export const store = configureStore({
     billing: billingReducer,
     notifications: notificationsReducer,
     payments: paymentsReducer,
+    expenses: expensesReducer,
   },
 });
 

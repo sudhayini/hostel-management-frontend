@@ -29,6 +29,8 @@ type Resident = {
   checkInDate?: string | null;
   expectedCheckOutDate?: string | null;
   roomHistory?: RoomHistory[];
+  preferredRoomNumber?: string;
+  preferredRoomType?: "Single" | "Shared" | "Any";
 };
 
 function Residents() {
@@ -56,6 +58,8 @@ function Residents() {
   const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
   const [email, setEmail] = useState("");
   const [roomNumber, setRoomNumber] = useState("");
+  const [preferredRoomNumber, setPreferredRoomNumber] = useState("");
+  const [preferredRoomType, setPreferredRoomType] = useState<"Single" | "Shared" | "Any">("Any");
   const [checkInDate, setCheckInDate] = useState("");
   const [expectedCheckOutDate, setExpectedCheckOutDate] = useState("");
 
@@ -116,6 +120,8 @@ function Residents() {
               phone,
               email,
               roomNumber,
+              preferredRoomNumber,
+              preferredRoomType,
               emergencyContactName,
               emergencyContactPhone,
               checkInDate: checkInDate || null,
@@ -134,6 +140,8 @@ function Residents() {
             phone,
             email,
             roomNumber,
+            preferredRoomNumber,
+            preferredRoomType,
             emergencyContactName,
             emergencyContactPhone,
             checkInDate: checkInDate || null,
@@ -168,6 +176,9 @@ function Residents() {
 
     setEmail(resident.email);
     setRoomNumber(resident.roomNumber);
+
+    setPreferredRoomNumber(resident.preferredRoomNumber || "");
+    setPreferredRoomType(resident.preferredRoomType || "Any");
 
     setCheckInDate(
     resident.checkInDate
@@ -267,6 +278,8 @@ function Residents() {
     setEmergencyContactPhone("");
     setEmail("");
     setRoomNumber(""); 
+    setPreferredRoomNumber("");
+    setPreferredRoomType("Any");
     setCheckInDate("");
     setExpectedCheckOutDate("");
     setEditingResident(null);
@@ -562,6 +575,45 @@ function Residents() {
               );
             })}
           </select>
+
+<div className="flex flex-wrap gap-4 ml-2 mb-3">
+  <div>
+    <label className="block text-sm font-medium mb-1">
+      Preferred Room Number
+    </label>
+    <select
+      value={preferredRoomNumber}
+      onChange={(e) => setPreferredRoomNumber(e.target.value)}
+      className="border rounded-lg px-2 py-1"
+    >
+      <option value="">No preference</option>
+      {rooms.map((room) => (
+        <option key={room.roomNumber} value={room.roomNumber}>
+          {room.roomNumber}
+        </option>
+      ))}
+    </select>
+  </div>
+
+  <div>
+    <label className="block text-sm font-medium mb-1">
+      Preferred Room Type
+    </label>
+    <select
+      value={preferredRoomType}
+      onChange={(e) =>
+        setPreferredRoomType(
+          e.target.value as "Single" | "Shared" | "Any"
+        )
+      }
+      className="border rounded-lg px-2 py-1"
+    >
+      <option value="Any">Any</option>
+      <option value="Single">Single</option>
+      <option value="Shared">Shared</option>
+    </select>
+  </div>
+</div>
 
           <div className="mt-2">
 

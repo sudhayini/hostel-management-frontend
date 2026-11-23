@@ -43,7 +43,7 @@ function Notifications() {
     setSending(true);
 
     try {
-      const response = await api.post("/notifications/send-sms", {
+      const response = await api.post("/notifications/send-in-app", {
         residentId,
         sendToAll,
         message: message.trim(),
@@ -53,9 +53,9 @@ function Notifications() {
       const summary = response.data?.summary;
 
       setFeedback(
-       summary
-         ? `In-app notifications saved: ${summary.inAppSaved}/${summary.totalResidents}. SMS submitted: ${summary.smsSubmitted}. SMS failed: ${summary.smsFailed}.`
-         : response.data?.message || "Notification request completed."
+        summary
+          ? `In-app notifications saved: ${summary.inAppSaved}/${summary.totalResidents}.`
+          : response.data?.message || "Notification sent successfully."
       );
 
       setMessage("");

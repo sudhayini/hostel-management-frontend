@@ -134,7 +134,7 @@ function Residents() {
         alert("Resident updated successfully");
       }
       else {
-        await dispatch(
+        const result=await dispatch(
           createResident({
             name,
             phone,
@@ -149,8 +149,10 @@ function Residents() {
           })
         ).unwrap();
 
-        alert("Resident added successfully");
-      }
+  alert(
+  `Resident added successfully!\nTemporary password: ${result.temporaryPassword}\nPlease share it securely with the resident.`
+);
+}
 
       clearForm();
     } catch (error: any) {

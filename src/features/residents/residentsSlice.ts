@@ -35,6 +35,12 @@ type ResidentInput = {
   expectedCheckOutDate?: string | null;
 };
 
+type CreateResidentResponse = {
+  message: string;
+  resident: Resident;
+  temporaryPassword: string;
+};
+
 const initialState: Resident[] = [];
 
 export const fetchResidents = createAsyncThunk(
@@ -47,12 +53,14 @@ export const fetchResidents = createAsyncThunk(
 
 export const createResident = createAsyncThunk(
   "residents/createResident",
-  async (resident: ResidentInput) => {
-    const response = await api.post("/residents", resident);
-    return response.data.resident as Resident;
+  async (resident: ResidentInput): Promise<CreateResidentResponse> => {
+    const response = await api.post<CreateResidentResponse>(
+      "/residents",
+      resident
+    );
+    return response.data;
   }
 );
-
 export const editResident = createAsyncThunk(
   "residents/editResident",
   async ({
@@ -107,7 +115,7 @@ const residentsSlice = createSlice({
     });
 
     builder.addCase(createResident.fulfilled, (state, action) => {
-      state.push(action.payload);
+     state.push(action.payload.resident);
     });
 
     builder.addCase(editResident.fulfilled, (state, action) => {
